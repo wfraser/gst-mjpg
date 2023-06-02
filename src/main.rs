@@ -1,132 +1,60 @@
+use std::str::FromStr;
+use std::sync::Arc;
+
+use anyhow::{bail, Context};
 use clap::Parser;
-use gstreamer::prelude::*;
-use gstreamer::{
-    Caps,
-    ClockTime,
-    DebugLevel,
-    Element,
-    ElementFactory,
-    FlowSuccess,
-    MessageView,
-    Pipeline,
-    State,
-};
-use gstreamer_app::{
-    AppSink,
-    AppSinkCallbacks,
-};
+
+mod video;
+
+use crate::video::Video;
+
+#[derive(Debug, Clone)]
+struct Size {
+    width: u32,
+    height: u32,
+}
+
+impl FromStr for Size {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (ws, hs) = match s.split_once('x') {
+            Some(v) => v,
+            None => bail!("size must be WIDTHxHEIGHT; missing 'x' char"),
+        };
+        let width = u32::from_str_radix(ws, 10).context("invalid width")?;
+        let height = u32::from_str_radix(hs, 10).context("invalid height")?;
+        Ok(Self { width, height })
+    }
+}
 
 #[derive(Debug, Parser)]
 struct Args {
     #[arg(long)]
-    width: Option<u32>,
-
-    #[arg(long)]
-    height: Option<u32>,
+    size: Option<Size>,
 
     #[arg(long, default_value = "/dev/video0")]
     device: String,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    gstreamer::init().expect("failed to init gstreamer");
-    gstreamer::debug_set_active(true);
-    gstreamer::debug_set_colored(true);
-    gstreamer::debug_set_default_threshold(DebugLevel::Warning);
+    Video::gst_init()?;
+    let video = Arc::new(Video::new(&args.device, args.size.map(|s| (s.width, s.height)))?);
+    video.start()?;
 
-    let sink_caps = {
-        let mut b = Caps::builder("image/jpeg");
-        if let Some(w) = args.width {
-            b = b.field("width", i32::try_from(w).expect("width out of range"));
-        }
-        if let Some(h) = args.height {
-            b = b.field("height", i32::try_from(h).expect("height out of range"));
-        }
-        b.build()
-    };
-    println!("{sink_caps:?}");
+    let loop_thread = std::thread::spawn({
+        let video = video.clone();
+        move || { video.event_loop() }
+    });
 
-    let appsink = AppSink::builder()
-        .caps(&sink_caps)
-        .name("app_sink")
-        .build();
+    std::thread::sleep(std::time::Duration::from_secs(10));
 
-    appsink.set_callbacks(
-        AppSinkCallbacks::builder()
-            .new_sample(|sink| {
-                println!("notified of sample");
+    println!("stopping");
+    video.stop()?;
 
-                let sample = match sink.pull_sample() {
-                    Ok(sample) => sample,
-                    Err(e) => {
-                        println!("failed to pull sample: {e}");
-                        return Ok(FlowSuccess::Ok);
-                    }
-                };
+    println!("waiting for main loop");
+    let result = loop_thread.join();
 
-                println!("got a sample: ({:?} bytes), {:?}",
-                    sample.buffer().map(|b| b.size()),
-                    sample.caps(),
-                );
-
-                // TODO: do something with the frame
-
-                Ok(FlowSuccess::Ok)
-            })
-            .build(),
-    );
-
-    let input = ElementFactory::make("v4l2src")
-        .name("camera")
-        .property_from_str("device", &args.device)
-        .build()
-        .unwrap();
-
-    let jpegenc = ElementFactory::make("jpegenc").build().unwrap();
-
-    let pipeline = Pipeline::new(Some("my-pipeline"));
-    pipeline
-        .add_many(&[
-            &input,
-            &jpegenc,
-            appsink.upcast_ref(),
-        ])
-        .unwrap();
-
-    Element::link_many(
-        &[
-            &input,
-            &jpegenc,
-            appsink.upcast_ref(),
-        ])
-        .unwrap();
-
-    pipeline
-        .set_state(State::Playing)
-        .expect("failed to set pipeline to Playing state");
-    println!("set to playing");
-
-    let bus = pipeline.bus().unwrap();
-    for msg in bus.iter_timed(ClockTime::NONE) {
-
-        match msg.view() {
-            MessageView::Eos(..) => {
-                println!("got EOS");
-                break;
-            }
-            MessageView::Error(e) => {
-                println!("Error from {:?}: {} ({:?})",
-                    e.src().map(|s| s.path_string()),
-                    e.error(),
-                    e.debug(),
-                );
-                break;
-            }
-            _ => (),
-        }
-    }
-
-    pipeline.set_state(State::Null)
-        .expect("failed to set the pipeline to Null state");
+    println!("all done: {result:?}");
+    Ok(())
 }

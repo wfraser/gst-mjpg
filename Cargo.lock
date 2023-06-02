@@ -305,6 +305,7 @@ dependencies = [
 name = "gst-mjpg"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "gstreamer",
  "gstreamer-app",
