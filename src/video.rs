@@ -1,25 +1,23 @@
+use std::sync::Arc;
+
 use anyhow::Context;
-use gstreamer::event::Eos;
+use futures::StreamExt;
 use gstreamer::prelude::*;
 use gstreamer::{
+    BufferRef,
     Caps,
-    ClockTime,
     DebugLevel,
     Element,
     ElementFactory,
-    FlowError,
-    FlowSuccess,
-    MessageView,
     Pipeline,
+    Sample,
     State,
 };
-use gstreamer_app::{
-    AppSink,
-    AppSinkCallbacks,
-};
+use gstreamer_app::AppSink;
 
 pub struct Video {
     pipeline: Pipeline,
+    appsink: AppSink,
 }
 
 impl Video {
@@ -57,44 +55,27 @@ impl Video {
             .name("appsink")
             .build();
 
-        let callbacks = AppSinkCallbacks::builder()
-            .new_sample(|sink| {
-                let sample = match sink.pull_sample() {
-                    Ok(sample) => sample,
-                    Err(e) => {
-                        println!("failed to pull sample: {e}");
-                        return Err(FlowError::Error);
-                    }
-                };
-
-                let buf = match sample.buffer() {
-                    Some(buf) => buf,
-                    None => {
-                        println!("sample has no buffer: {sample:?}");
-                        return Err(FlowError::Error);
-                    }
-                };
-
-                println!("sample #{}: {} bytes @ {:?}; caps = {:?}",
-                    buf.offset(),
-                    buf.size(),
-                    buf.dts(),
-                    sample.caps(),
-                );
-
-                // TODO: do something with it
-
-                Ok(FlowSuccess::Ok)
-            })
-            .build();
-
-        appsink.set_callbacks(callbacks);
-
         let elts = &[&camera, &enc, appsink.upcast_ref()];
         pipeline.add_many(elts).context("failed to add elements to pipeline")?;
         Element::link_many(elts).context("failed to link elements")?;
 
-        Ok(Self { pipeline })
+        Ok(Self { pipeline, appsink })
+    }
+
+    pub async fn foreach_frame<F>(self: Arc<Self>, f: F)
+        where F: Fn(&Sample, &BufferRef)
+    {
+        while let Some(sample) = self.appsink.stream().next().await {
+            let buf = match sample.buffer() {
+                Some(buf) => buf,
+                None => {
+                    println!("sample has no buffer: {sample:?}");
+                    continue;
+                }
+            };
+
+            f(&sample, buf);
+        }
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
@@ -104,29 +85,7 @@ impl Video {
     }
 
     pub fn stop(&self) -> anyhow::Result<()> {
-        self.pipeline.send_event(Eos::new());
-        Ok(())
-    }
-
-    pub fn event_loop(&self) -> anyhow::Result<()> {
-        let bus = self.pipeline.bus().unwrap();
-        for msg in bus.iter_timed(ClockTime::NONE) {
-            match msg.view() {
-                MessageView::Eos(..) => {
-                    println!("got EOS");
-                    break;
-                }
-                MessageView::Error(e) => {
-                    println!("Error from {:?}: {} ({:?})",
-                        e.src().map(|s| s.path_string()),
-                        e.error(),
-                        e.debug(),
-                    );
-                    break;
-                }
-                _ => (),
-            }
-        }
+        //self.pipeline.send_event(gstreamer::event::Eos::new());
         self.pipeline.set_state(State::Null)
             .context("failed to set pipeline to Null state")?;
         Ok(())
