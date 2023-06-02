@@ -3,6 +3,7 @@ use gstreamer::prelude::*;
 use gstreamer::{
     Caps,
     ClockTime,
+    DebugLevel,
     Element,
     ElementFactory,
     FlowSuccess,
@@ -30,6 +31,9 @@ struct Args {
 fn main() {
     let args = Args::parse();
     gstreamer::init().expect("failed to init gstreamer");
+    gstreamer::debug_set_active(true);
+    gstreamer::debug_set_colored(true);
+    gstreamer::debug_set_default_threshold(DebugLevel::Warning);
 
     let sink_caps = {
         let mut b = Caps::builder("image/jpeg");
