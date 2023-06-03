@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use futures::StreamExt;
-use gstreamer::prelude::*;
+use gstreamer::{prelude::*, Message};
 use gstreamer::{
     BufferRef,
     Caps,
@@ -75,6 +75,14 @@ impl Video {
             };
 
             f(&sample, buf);
+        }
+        println!("no more frames");
+    }
+
+    pub async fn foreach_message(self: Arc<Self>, f: impl Fn(&Video, Message)) {
+        let bus = self.pipeline.bus().unwrap();
+        while let Some(msg) = bus.stream().next().await {
+            f(self.as_ref(), msg);
         }
     }
 
