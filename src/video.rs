@@ -3,16 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use futures::StreamExt;
 use gstreamer::{prelude::*, Message};
-use gstreamer::{
-    BufferRef,
-    Caps,
-    DebugLevel,
-    Element,
-    ElementFactory,
-    Pipeline,
-    Sample,
-    State,
-};
+use gstreamer::{BufferRef, Caps, DebugLevel, Element, ElementFactory, Pipeline, Sample, State};
 use gstreamer_app::AppSink;
 
 pub struct Video {
@@ -38,7 +29,9 @@ impl Video {
             .build()
             .context("failed to make v4l2src")?;
 
-        let enc = ElementFactory::make("jpegenc").build().context("failed to make jpegenc")?;
+        let enc = ElementFactory::make("jpegenc")
+            .build()
+            .context("failed to make jpegenc")?;
 
         let sink_caps = {
             let mut b = Caps::builder("image/jpeg");
@@ -50,21 +43,18 @@ impl Video {
             b.build()
         };
 
-        let appsink = AppSink::builder()
-            .caps(&sink_caps)
-            .name("appsink")
-            .build();
+        let appsink = AppSink::builder().caps(&sink_caps).name("appsink").build();
 
         let elts = &[&camera, &enc, appsink.upcast_ref()];
-        pipeline.add_many(elts).context("failed to add elements to pipeline")?;
+        pipeline
+            .add_many(elts)
+            .context("failed to add elements to pipeline")?;
         Element::link_many(elts).context("failed to link elements")?;
 
         Ok(Self { pipeline, appsink })
     }
 
-    pub async fn foreach_frame<F>(self: Arc<Self>, f: F)
-        where F: Fn(&Sample, &BufferRef)
-    {
+    pub async fn foreach_frame(self: Arc<Self>, f: impl Fn(&Video, &Sample, &BufferRef)) {
         while let Some(sample) = self.appsink.stream().next().await {
             let buf = match sample.buffer() {
                 Some(buf) => buf,
@@ -74,7 +64,7 @@ impl Video {
                 }
             };
 
-            f(&sample, buf);
+            f(self.as_ref(), &sample, buf);
         }
         println!("no more frames");
     }
@@ -87,14 +77,16 @@ impl Video {
     }
 
     pub fn start(&self) -> anyhow::Result<()> {
-        self.pipeline.set_state(State::Playing)
+        self.pipeline
+            .set_state(State::Playing)
             .context("failed to set pipeline to Playing state")?;
         Ok(())
     }
 
     pub fn stop(&self) -> anyhow::Result<()> {
         //self.pipeline.send_event(gstreamer::event::Eos::new());
-        self.pipeline.set_state(State::Null)
+        self.pipeline
+            .set_state(State::Null)
             .context("failed to set pipeline to Null state")?;
         Ok(())
     }

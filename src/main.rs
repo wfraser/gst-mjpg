@@ -1,13 +1,13 @@
 use std::str::FromStr;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::SeqCst;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use clap::Parser;
-use gstreamer::MessageView;
 use gstreamer::prelude::GstObjectExt;
+use gstreamer::MessageView;
 
 mod video;
 
@@ -46,32 +46,39 @@ struct Args {
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     Video::gst_init()?;
-    let video = Arc::new(Video::new(&args.device, args.size.map(|s| (s.width, s.height)))?);
+    let video = Arc::new(Video::new(
+        &args.device,
+        args.size.map(|s| (s.width, s.height)),
+    )?);
 
     let error = Arc::new(AtomicBool::new(false));
     let error2 = error.clone();
-    tokio::spawn(video.clone().foreach_message(move |video, msg| {
-        match msg.view() {
-            MessageView::Eos(..) => {
-                println!("got EOS");
-            }
-            MessageView::Error(e) => {
-                error2.store(true, SeqCst);
-                println!("Error from {:?}: {} ({:?})",
-                    e.src().map(|s| s.path_string()),
-                    e.error(),
-                    e.debug(),
-                );
-                video.stop().unwrap();
-            }
-            _ => (),
-        }
-    }));
+    tokio::spawn(
+        video
+            .clone()
+            .foreach_message(move |video, msg| match msg.view() {
+                MessageView::Eos(..) => {
+                    println!("got EOS");
+                }
+                MessageView::Error(e) => {
+                    error2.store(true, SeqCst);
+                    println!(
+                        "Error from {:?}: {} ({:?})",
+                        e.src().map(|s| s.path_string()),
+                        e.error(),
+                        e.debug(),
+                    );
+                    video.stop().unwrap();
+                }
+                _ => (),
+            }),
+    );
 
     video.start()?;
 
-    let frames = tokio::spawn(video.clone().foreach_frame(|sample, buf| {
-        println!("sample #{}: {} bytes @ {:?}; caps = {:?}",
+    let frames = tokio::spawn(video.clone().foreach_frame(|_video, sample, buf| {
+        println!(
+            "sample #{}: {} bytes @ {:?}; caps = {:?}",
             buf.offset(),
             buf.size(),
             buf.dts(),
@@ -99,8 +106,9 @@ async fn main() -> anyhow::Result<()> {
     println!("restarting for 1 more sec");
     video.start()?;
 
-    tokio::spawn(video.clone().foreach_frame(|sample, buf| {
-        println!("sample #{}: {} bytes @ {:?}; caps = {:?}",
+    tokio::spawn(video.clone().foreach_frame(|_video, sample, buf| {
+        println!(
+            "sample #{}: {} bytes @ {:?}; caps = {:?}",
             buf.offset(),
             buf.size(),
             buf.dts(),
