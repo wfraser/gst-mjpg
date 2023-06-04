@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::SeqCst;
@@ -9,7 +12,8 @@ use clap::Parser;
 use gstreamer::prelude::GstObjectExt;
 use gstreamer::MessageView;
 
-mod video;
+pub mod frames;
+pub mod video;
 
 use crate::video::Video;
 
@@ -44,7 +48,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    stderrlog::new().module(module_path!()).init().unwrap();
     let args = Args::parse();
+
     Video::gst_init()?;
     let video = Arc::new(Video::new(
         &args.device,
