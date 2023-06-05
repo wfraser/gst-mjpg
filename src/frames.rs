@@ -30,25 +30,29 @@ impl Frames {
         }
     }
 
-    pub async fn stream(&self) -> FrameStream<'_> {
+    pub async fn stream(self: Arc<Self>) -> FrameStream {
+        debug!("new streamer");
         let mut inner = self.inner.lock().await;
         let receiver = if inner.count == 0 {
-            self.start(&inner);
+            info!("first streamer");
             let (sender, receiver) = broadcast::channel(16);
             inner.sender = sender;
             inner.count = 1;
+            self.start(&inner);
             receiver
         } else {
+            debug!("{} previous streams; subscribing", inner.count);
             inner.count += 1;
             inner.sender.subscribe()
         };
         FrameStream {
-            parent: self,
+            parent: self.clone(),
             stream: BroadcastStream::new(receiver),
         }
     }
 
     fn start(&self, inner: &MutexGuard<'_, FramesInner>) {
+        info!("starting video");
         if let Err(e) = self.video.start() {
             error!("error starting video: {e}");
             return;
@@ -58,6 +62,7 @@ impl Frames {
             self.video
                 .clone()
                 .foreach_frame(move |_video, _sample, buf| {
+                    debug!("frame {}", buf.offset());
                     let mut bytes = BytesMut::new();
                     for mem in buf.iter_memories() {
                         bytes.extend_from_slice(mem.map_readable().unwrap().as_slice());
@@ -69,30 +74,36 @@ impl Frames {
         );
     }
 
-    pub fn stop(&self) {
-        let mut inner = self.inner.blocking_lock();
+    pub async fn stop(&self) {
+        let mut inner = self.inner.lock().await;
         inner.count = inner.count.saturating_sub(1);
         if inner.count != 0 {
+            debug!("have {} streamers still", inner.count);
             return;
         }
+        info!("last streamer went away; stopping video");
         if let Err(e) = self.video.stop() {
             error!("error stopping video: {e}");
         }
     }
 }
 
-pub struct FrameStream<'a> {
-    parent: &'a Frames,
+pub struct FrameStream {
+    parent: Arc<Frames>,
     stream: BroadcastStream<Bytes>,
 }
 
-impl<'a> Drop for FrameStream<'a> {
+impl Drop for FrameStream {
     fn drop(&mut self) {
-        self.parent.stop();
+        debug!("FrameStream dropped");
+        let video = self.parent.clone();
+        tokio::spawn(async move {
+            video.stop().await
+        });
     }
 }
 
-impl<'a> Stream for FrameStream<'a> {
+impl Stream for FrameStream {
     type Item = Bytes;
     fn poll_next(
         mut self: Pin<&mut Self>,
@@ -105,7 +116,10 @@ impl<'a> Stream for FrameStream<'a> {
                 warn!("lag: {lag}");
                 self.poll_next(cx)
             }
-            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Ready(None) => {
+                warn!("FrameStream returned none");
+                Poll::Ready(None)
+            },
             Poll::Pending => Poll::Pending,
         }
     }

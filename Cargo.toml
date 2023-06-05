@@ -18,7 +18,7 @@ stderrlog = "0.5.4"
 
 [dependencies.hyper]
 version = "0.14.26"
-features = ["server"]
+features = ["http1", "server", "stream", "tcp"]
 
 [dependencies.tokio]
 version = "1.28.2"
