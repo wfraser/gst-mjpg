@@ -30,9 +30,16 @@ async fn handle_request(
 
     let bdry = uuid_string_random();
     let stream = frames.stream().await;
-    let parts = stream.map(|buf| {
+    let parts = stream.map(|(buf, ts)| {
         let mut headers = HeaderMap::new();
         headers.append("Content-Type", HeaderValue::from_static("image/jpeg"));
+        if let Some(ts) = ts {
+            headers.append(
+                "X-Timestamp",
+                HeaderValue::from_str(&format!("{}.{:.06}", ts.as_secs(), ts.subsec_micros()))
+                    .unwrap(),
+            );
+        }
         Ok::<_, Infallible>(Part { headers, body: buf })
     });
     let body = Body::wrap_stream(multipart_stream::serialize(parts, bdry.as_str()));

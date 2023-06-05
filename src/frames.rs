@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Poll;
+use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
 use futures::Stream;
@@ -17,7 +18,7 @@ pub struct Frames {
 
 struct FramesInner {
     count: u64,
-    sender: Sender<Bytes>,
+    sender: Sender<(Bytes, Option<Duration>)>,
 }
 
 impl Frames {
@@ -67,7 +68,11 @@ impl Frames {
                     for mem in buf.iter_memories() {
                         bytes.extend_from_slice(mem.map_readable().unwrap().as_slice());
                     }
-                    if let Err(e) = sender.send(bytes.freeze()) {
+                    let ts = match buf.dts().map(Duration::try_from) {
+                        Some(Ok(dur)) => Some(dur),
+                        _ => None,
+                    };
+                    if let Err(e) = sender.send((bytes.freeze(), ts)) {
                         error!("failed to broadcast frame: {e}");
                     }
                 }),
@@ -90,7 +95,7 @@ impl Frames {
 
 pub struct FrameStream {
     parent: Arc<Frames>,
-    stream: BroadcastStream<Bytes>,
+    stream: BroadcastStream<(Bytes, Option<Duration>)>,
 }
 
 impl Drop for FrameStream {
@@ -102,14 +107,14 @@ impl Drop for FrameStream {
 }
 
 impl Stream for FrameStream {
-    type Item = Bytes;
+    type Item = (Bytes, Option<Duration>);
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> Poll<Option<Self::Item>> {
         let stream = Pin::new(&mut self.stream);
         match stream.poll_next(cx) {
-            Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(frame)),
+            Poll::Ready(Some(Ok(stuff))) => Poll::Ready(Some(stuff)),
             Poll::Ready(Some(Err(lag))) => {
                 warn!("lag: {lag}");
                 self.poll_next(cx)
