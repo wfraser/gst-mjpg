@@ -60,6 +60,10 @@ struct Args {
     /// Optional argument is the pattern to show. See `gst-inspect-1.0 testvideosrc` (property "pattern") for options.
     #[arg(long, default_missing_value = "smpte", num_args(0..=1))]
     test_video: Option<String>,
+
+    /// URL path to use for the stream.
+    #[arg(long, default_value = "/stream")]
+    stream_path: String,
 }
 
 #[tokio::main]
@@ -102,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let frames = Arc::new(Frames::new(video));
-    http::serve(args.port, frames).await?;
+    http::serve(args.port, args.stream_path.clone(), frames).await?;
 
     Ok(())
 }

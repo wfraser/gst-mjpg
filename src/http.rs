@@ -16,11 +16,12 @@ use crate::frames::Frames;
 async fn handle_request(
     req: Request<Body>,
     _remote: SocketAddr,
+    stream_path: String,
     frames: Arc<Frames>,
 ) -> anyhow::Result<Response<Body>> {
-    match req.uri().path() {
+    match req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("") {
         "/" => return index(),
-        "/stream" => (),
+        path if path == stream_path => (),
         other => {
             return Ok(Response::builder()
                 .status(404)
@@ -71,9 +72,10 @@ fn server_error(e: anyhow::Error) -> Result<Response<Body>, Infallible> {
         .unwrap())
 }
 
-pub async fn serve(port: u16, frames: Arc<Frames>) -> Result<(), hyper::Error> {
+pub async fn serve(port: u16, path: String, frames: Arc<Frames>) -> Result<(), hyper::Error> {
     let make_svc = make_service_fn(move |conn: &AddrStream| {
         let remote = conn.remote_addr();
+        let path = path.clone();
         let frames = frames.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
@@ -87,8 +89,9 @@ pub async fn serve(port: u16, frames: Arc<Frames>) -> Result<(), hyper::Error> {
                     req.uri()
                 );
                 let frames = frames.clone();
+                let path = path.clone();
                 async move {
-                    let mut resp = handle_request(req, remote, frames)
+                    let mut resp = handle_request(req, remote, path, frames)
                         .await
                         .or_else(server_error)
                         .unwrap();
