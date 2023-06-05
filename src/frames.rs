@@ -97,9 +97,7 @@ impl Drop for FrameStream {
     fn drop(&mut self) {
         debug!("FrameStream dropped");
         let video = self.parent.clone();
-        tokio::spawn(async move {
-            video.stop().await
-        });
+        tokio::spawn(async move { video.stop().await });
     }
 }
 
@@ -119,7 +117,7 @@ impl Stream for FrameStream {
             Poll::Ready(None) => {
                 warn!("FrameStream returned none");
                 Poll::Ready(None)
-            },
+            }
             Poll::Pending => Poll::Pending,
         }
     }
