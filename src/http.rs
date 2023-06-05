@@ -43,7 +43,9 @@ async fn handle_request(
         Ok::<_, Infallible>(Part { headers, body: buf })
     });
     let body = Body::wrap_stream(multipart_stream::serialize(parts, bdry.as_str()));
-    Ok(Response::new(body))
+    let mut resp = Response::new(body);
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_str(&format!("multipart/x-mixed-replace;boundary={}", bdry.as_str())).unwrap());
+    Ok(resp)
 }
 
 fn index() -> anyhow::Result<Response<Body>> {
