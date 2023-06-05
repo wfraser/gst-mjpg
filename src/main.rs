@@ -8,6 +8,7 @@ use anyhow::{bail, Context};
 use clap::Parser;
 use gstreamer::prelude::GstObjectExt;
 use gstreamer::MessageView;
+use video::VideoSource;
 
 pub mod frames;
 pub mod http;
@@ -53,11 +54,20 @@ struct Args {
     /// 0x = Error/Warning, 1x = Info, 2x = Debug, 3x = Trace.
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Stream from a fake video source instead of opening a real video device.
+    ///
+    /// Optional argument is the pattern to show. See `gst-inspect-1.0 testvideosrc` (property "pattern") for options.
+    #[arg(long, default_missing_value = "smpte", num_args(0..=1))]
+    test_video: Option<String>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    if args.verbose > 0 {
+        dbg!(&args);
+    }
     stderrlog::new()
         .module(module_path!())
         .verbosity(args.verbose as usize + 1)
@@ -66,7 +76,9 @@ async fn main() -> anyhow::Result<()> {
 
     Video::gst_init()?;
     let video = Arc::new(Video::new(
-        &args.device,
+        args.test_video
+            .map(VideoSource::Test)
+            .unwrap_or_else(|| VideoSource::V4L(args.device.clone())),
         args.size.map(|s| (s.width, s.height)),
     )?);
 

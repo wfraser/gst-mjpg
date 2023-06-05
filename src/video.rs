@@ -6,6 +6,12 @@ use gstreamer::{prelude::*, Message};
 use gstreamer::{BufferRef, Caps, DebugLevel, Element, ElementFactory, Pipeline, Sample, State};
 use gstreamer_app::AppSink;
 
+#[derive(Debug, Clone)]
+pub enum VideoSource {
+    V4L(String),
+    Test(String),
+}
+
 pub struct Video {
     pipeline: Pipeline,
     appsink: AppSink,
@@ -20,14 +26,21 @@ impl Video {
         Ok(())
     }
 
-    pub fn new(device: &str, size: Option<(u32, u32)>) -> anyhow::Result<Self> {
+    pub fn new(source: VideoSource, size: Option<(u32, u32)>) -> anyhow::Result<Self> {
         let pipeline = Pipeline::new(Some("pipeline"));
 
-        let camera = ElementFactory::make("v4l2src")
-            .name("camera")
-            .property_from_str("device", device)
-            .build()
-            .context("failed to make v4l2src")?;
+        let camera = match source {
+            VideoSource::V4L(device) => ElementFactory::make("v4l2src")
+                .name("camera")
+                .property_from_str("device", &device)
+                .build()
+                .context("failed to make v4l2src")?,
+            VideoSource::Test(pattern) => ElementFactory::make("videotestsrc")
+                .name("camera")
+                .property_from_str("pattern", &pattern)
+                .build()
+                .context("failed to make videotestsrc")?,
+        };
 
         let enc = ElementFactory::make("jpegenc")
             .build()

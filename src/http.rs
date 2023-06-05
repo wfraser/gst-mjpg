@@ -19,7 +19,7 @@ async fn handle_request(
     frames: Arc<Frames>,
 ) -> anyhow::Result<Response<Body>> {
     match req.uri().path() {
-        "/" => return Ok(index()?),
+        "/" => return index(),
         "/stream" => (),
         other => {
             return Ok(Response::builder()
@@ -47,7 +47,7 @@ async fn handle_request(
 }
 
 fn index() -> anyhow::Result<Response<Body>> {
-    Ok(Response::builder()
+    Response::builder()
         .header("Content-Type", "text/html")
         .body(
             format!(
@@ -58,7 +58,7 @@ fn index() -> anyhow::Result<Response<Body>> {
             )
             .into(),
         )
-        .context("failed to build index response")?)
+        .context("failed to build index response")
 }
 
 fn server_error(e: anyhow::Error) -> Result<Response<Body>, Infallible> {
