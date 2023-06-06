@@ -15,6 +15,7 @@ pub mod http;
 pub mod video;
 
 use crate::frames::Frames;
+use crate::http::Paths;
 use crate::video::Video;
 
 #[derive(Debug, Clone)]
@@ -64,6 +65,10 @@ struct Args {
     /// URL path to use for the stream.
     #[arg(long, default_value = "/stream")]
     stream_path: String,
+
+    /// URL path to use for taking snapshots (single frames sent as JPEG).
+    #[arg(long, default_value = "/snapshot")]
+    snapshot_path: String,
 }
 
 #[tokio::main]
@@ -105,8 +110,12 @@ async fn main() -> anyhow::Result<()> {
             }),
     );
 
+    let paths = Arc::new(Paths {
+        stream: args.stream_path,
+        snapshot: args.snapshot_path,
+    });
     let frames = Arc::new(Frames::new(video));
-    http::serve(args.port, args.stream_path.clone(), frames).await?;
+    http::serve(args.port, paths, frames).await?;
 
     Ok(())
 }

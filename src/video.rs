@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use futures::StreamExt;
-use gstreamer::{prelude::*, Message};
-use gstreamer::{BufferRef, Caps, DebugLevel, Element, ElementFactory, Pipeline, Sample, State};
+use gstreamer::prelude::*;
+use gstreamer::{
+    BufferRef, Caps, DebugLevel, Element, ElementFactory, Message, Pipeline, Sample, State,
+};
 use gstreamer_app::AppSink;
 
 #[derive(Debug, Clone)]

@@ -13,22 +13,37 @@ use multipart_stream::Part;
 
 use crate::frames::Frames;
 
+#[derive(Debug, Clone)]
+pub struct Paths {
+    pub stream: String,
+    pub snapshot: String,
+}
+
 async fn handle_request(
     req: Request<Body>,
     _remote: SocketAddr,
-    stream_path: String,
+    paths: Arc<Paths>,
     frames: Arc<Frames>,
 ) -> anyhow::Result<Response<Body>> {
-    match req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("") {
-        "/" => return index(),
-        path if path == stream_path => (),
-        other => {
-            return Ok(Response::builder()
-                .status(404)
-                .body(format!("nothing configured for the path {other:?}").into())?)
-        }
+    let path = req
+        .uri()
+        .path_and_query()
+        .map(|pq| pq.as_str())
+        .unwrap_or("");
+    if path == "/" {
+        index(&paths)
+    } else if path == paths.stream {
+        handle_stream(frames).await
+    } else if path == paths.snapshot {
+        handle_snapshot(frames).await
+    } else {
+        Ok(Response::builder()
+            .status(404)
+            .body(format!("nothing configured for the path {path:?}").into())?)
     }
+}
 
+async fn handle_stream(frames: Arc<Frames>) -> anyhow::Result<Response<Body>> {
     let bdry = uuid_string_random();
     let stream = frames.stream().await;
     let parts = stream.map(|(buf, ts)| {
@@ -45,18 +60,41 @@ async fn handle_request(
     });
     let body = Body::wrap_stream(multipart_stream::serialize(parts, bdry.as_str()));
     let mut resp = Response::new(body);
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_str(&format!("multipart/x-mixed-replace;boundary={}", bdry.as_str())).unwrap());
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_str(&format!(
+            "multipart/x-mixed-replace;boundary={}",
+            bdry.as_str()
+        ))
+        .unwrap(),
+    );
     Ok(resp)
 }
 
-fn index() -> anyhow::Result<Response<Body>> {
+async fn handle_snapshot(frames: Arc<Frames>) -> anyhow::Result<Response<Body>> {
+    let (frame, _ts) = match frames.stream().await.next().await {
+        Some(frame) => frame,
+        None => {
+            return server_error(anyhow::anyhow!("no frames from video source")).map_err(Into::into)
+        }
+    };
+    Response::builder()
+        .header("Content-Type", "image/jpeg")
+        .body(frame.into())
+        .context("failed to make snapshot response")
+}
+
+fn index(paths: &Paths) -> anyhow::Result<Response<Body>> {
     Response::builder()
         .header("Content-Type", "text/html")
         .body(
             format!(
                 "<html><body><h1><code>gst-mjpg</code></h1>
-            <p><a href=\"/stream\">start stream</a>
+            <p><a href=\"{}\">start stream</a>
+            <p><a href=\"{}\">get snapshot</a>
             <address>gst-mjpg/v{}",
+                paths.stream,
+                paths.snapshot,
                 env!("CARGO_PKG_VERSION")
             )
             .into(),
@@ -72,10 +110,10 @@ fn server_error(e: anyhow::Error) -> Result<Response<Body>, Infallible> {
         .unwrap())
 }
 
-pub async fn serve(port: u16, path: String, frames: Arc<Frames>) -> Result<(), hyper::Error> {
+pub async fn serve(port: u16, paths: Arc<Paths>, frames: Arc<Frames>) -> Result<(), hyper::Error> {
     let make_svc = make_service_fn(move |conn: &AddrStream| {
         let remote = conn.remote_addr();
-        let path = path.clone();
+        let paths = paths.clone();
         let frames = frames.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
@@ -89,9 +127,9 @@ pub async fn serve(port: u16, path: String, frames: Arc<Frames>) -> Result<(), h
                     req.uri()
                 );
                 let frames = frames.clone();
-                let path = path.clone();
+                let paths = paths.clone();
                 async move {
-                    let mut resp = handle_request(req, remote, path, frames)
+                    let mut resp = handle_request(req, remote, paths, frames)
                         .await
                         .or_else(server_error)
                         .unwrap();
