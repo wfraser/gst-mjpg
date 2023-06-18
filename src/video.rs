@@ -4,7 +4,7 @@ use anyhow::Context;
 use futures::StreamExt;
 use gstreamer::prelude::*;
 use gstreamer::{
-    BufferRef, Caps, DebugLevel, Element, ElementFactory, Message, Pipeline, Sample, State,
+    Bin, BufferRef, Caps, DebugLevel, Element, ElementFactory, Message, Pipeline, Sample, State,
 };
 use gstreamer_app::AppSink;
 
@@ -28,8 +28,9 @@ impl Video {
         Ok(())
     }
 
-    pub fn new(source: VideoSource, size: Option<(u32, u32)>) -> anyhow::Result<Self> {
+    pub fn new(source: VideoSource, size: Option<(u32, u32)>, filter: Option<&str>) -> anyhow::Result<Self> {
         let pipeline = Pipeline::new(Some("pipeline"));
+        let mut elts = vec![];
 
         let camera = match source {
             VideoSource::V4L(device) => ElementFactory::make("v4l2src")
@@ -43,10 +44,19 @@ impl Video {
                 .build()
                 .context("failed to make videotestsrc")?,
         };
+        elts.push(&camera);
+
+        let filt: Bin;
+        if let Some(desc) = filter {
+            filt = gstreamer::parse_bin_from_description(desc, true)
+                .with_context(|| format!("failed to create elements described by {desc:?}"))?;
+            elts.push(filt.upcast_ref());
+        }
 
         let enc = ElementFactory::make("jpegenc")
             .build()
             .context("failed to make jpegenc")?;
+        elts.push(&enc);
 
         let sink_caps = {
             let mut b = Caps::builder("image/jpeg");
@@ -59,12 +69,12 @@ impl Video {
         };
 
         let appsink = AppSink::builder().caps(&sink_caps).name("appsink").build();
+        elts.push(appsink.upcast_ref());
 
-        let elts = &[&camera, &enc, appsink.upcast_ref()];
         pipeline
-            .add_many(elts)
+            .add_many(&elts)
             .context("failed to add elements to pipeline")?;
-        Element::link_many(elts).context("failed to link elements")?;
+        Element::link_many(&elts).context("failed to link elements")?;
 
         Ok(Self { pipeline, appsink })
     }

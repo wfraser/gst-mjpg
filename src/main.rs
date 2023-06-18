@@ -58,7 +58,8 @@ struct Args {
 
     /// Stream from a fake video source instead of opening a real video device.
     ///
-    /// Optional argument is the pattern to show. See `gst-inspect-1.0 testvideosrc` (property "pattern") for options.
+    /// Optional argument is the pattern to show. See `gst-inspect-1.0 testvideosrc` (property
+    /// "pattern") for options.
     #[arg(long, default_missing_value = "smpte", num_args(0..=1))]
     test_video: Option<String>,
 
@@ -69,6 +70,13 @@ struct Args {
     /// URL path to use for taking snapshots (single frames sent as JPEG).
     #[arg(long, default_value = "/snapshot")]
     snapshot_path: String,
+
+    /// Description (in gst-launch syntax) of additional filter(s) to insert between the camera and
+    /// jpeg encoding.
+    ///
+    /// Hint: try something like `videoflip method=rotate-180`
+    #[arg(long)]
+    filter: Option<String>,
 }
 
 #[tokio::main]
@@ -89,6 +97,7 @@ async fn main() -> anyhow::Result<()> {
             .map(VideoSource::Test)
             .unwrap_or_else(|| VideoSource::V4L(args.device.clone())),
         args.size.map(|s| (s.width, s.height)),
+        args.filter.as_deref(),
     )?);
 
     tokio::spawn(
