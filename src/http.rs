@@ -13,6 +13,7 @@ use multipart_stream::Part;
 
 use crate::frames::Frames;
 
+/// Configurable paths to the HTTP server's endpoints.
 #[derive(Debug, Clone)]
 pub struct Paths {
     pub stream: String,
@@ -25,6 +26,7 @@ async fn handle_request(
     paths: Arc<Paths>,
     frames: Arc<Frames>,
 ) -> anyhow::Result<Response<Body>> {
+    // use path+query so that we can emulate mjpg-streamer's `/?action=stream` endpoint.
     let path = req
         .uri()
         .path_and_query()
@@ -89,10 +91,10 @@ fn index(paths: &Paths) -> anyhow::Result<Response<Body>> {
         .header("Content-Type", "text/html")
         .body(
             format!(
-                "<html><body><h1><code>gst-mjpg</code></h1>
-            <p><a href=\"{}\">start stream</a>
-            <p><a href=\"{}\">get snapshot</a>
-            <address>gst-mjpg/v{}",
+                "<html><body><h1><code>gst-mjpg</code></h1>\
+                <p><a href=\"{}\">start stream</a>\
+                <p><a href=\"{}\">get snapshot</a>\
+                <address>gst-mjpg/v{}",
                 paths.stream,
                 paths.snapshot,
                 env!("CARGO_PKG_VERSION")
@@ -110,6 +112,7 @@ fn server_error(e: anyhow::Error) -> Result<Response<Body>, Infallible> {
         .unwrap())
 }
 
+/// Start serving HTTP requests. Does not finish unless the server fails.
 pub async fn serve(port: u16, paths: Arc<Paths>, frames: Arc<Frames>) -> Result<(), hyper::Error> {
     let make_svc = make_service_fn(move |conn: &AddrStream| {
         let remote = conn.remote_addr();

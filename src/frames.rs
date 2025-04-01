@@ -11,6 +11,11 @@ use tokio_stream::wrappers::BroadcastStream;
 
 use crate::video::Video;
 
+/// If a consumer is slow to pull frames from a `FrameStream`, we'll buffer up to this many frames,
+/// but then begin discarding old frames.
+const MAX_BUFFERED_FRAMES: usize = 16;
+
+/// Capture frames from a video source for multiple consumers.
 pub struct Frames {
     video: Arc<Video>,
     inner: Mutex<FramesInner>,
@@ -22,8 +27,10 @@ struct FramesInner {
 }
 
 impl Frames {
+    /// Create a new instance from the given video source.
     pub fn new(video: Arc<Video>) -> Self {
-        let (sender, _) = broadcast::channel(16);
+        // placeholder sender until someone calls stream()
+        let (sender, _) = broadcast::channel(MAX_BUFFERED_FRAMES);
         let inner = FramesInner { count: 0, sender };
         Self {
             video,
@@ -31,12 +38,13 @@ impl Frames {
         }
     }
 
+    /// Subscribe to frames. If no other subscribers currently exist, this will start the video.
     pub async fn stream(self: Arc<Self>) -> FrameStream {
         debug!("new streamer");
         let mut inner = self.inner.lock().await;
         let receiver = if inner.count == 0 {
             info!("first streamer");
-            let (sender, receiver) = broadcast::channel(16);
+            let (sender, receiver) = broadcast::channel(MAX_BUFFERED_FRAMES);
             inner.sender = sender;
             inner.count = 1;
             self.start(&inner);
@@ -52,6 +60,8 @@ impl Frames {
         }
     }
 
+    /// Start the underlying video source and begin capturing and broadcasting frames to all
+    /// subscribers.
     fn start(&self, inner: &MutexGuard<'_, FramesInner>) {
         info!("starting video");
         if let Err(e) = self.video.start() {
@@ -64,6 +74,8 @@ impl Frames {
                 .clone()
                 .foreach_frame(move |_video, _sample, buf| {
                     debug!("frame {}", buf.offset());
+                    // We have to copy the BufferRef into a Bytes because that's what Hyper will
+                    // eventually need.
                     let mut bytes = BytesMut::new();
                     for mem in buf.iter_memories() {
                         bytes.extend_from_slice(mem.map_readable().unwrap().as_slice());
@@ -79,7 +91,9 @@ impl Frames {
         );
     }
 
-    pub async fn stop(&self) {
+    /// Call when a subscriber is dropped. If this makes the number of subscribers zero, this stops
+    /// the underlying video source.
+    async fn subscriber_stopped(&self) {
         let mut inner = self.inner.lock().await;
         inner.count = inner.count.saturating_sub(1);
         if inner.count != 0 {
@@ -93,6 +107,7 @@ impl Frames {
     }
 }
 
+/// A stream of video frames and their timestamps.
 pub struct FrameStream {
     parent: Arc<Frames>,
     stream: BroadcastStream<(Bytes, Option<Duration>)>,
@@ -102,7 +117,7 @@ impl Drop for FrameStream {
     fn drop(&mut self) {
         debug!("FrameStream dropped");
         let video = self.parent.clone();
-        tokio::spawn(async move { video.stop().await });
+        tokio::spawn(async move { video.subscriber_stopped().await });
     }
 }
 
