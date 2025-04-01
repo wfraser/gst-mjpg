@@ -14,17 +14,27 @@ clap = { version = "4.3.0", features = ["derive", "cargo", "string"] }
 futures = "0.3.28"
 gstreamer = "0.20.5"
 gstreamer-app = "0.20.0"
+http-body-util = "0.1.3"
 log = "0.4"
-multipart-stream = "0.1.2"
+#multipart-stream = "0.1.2"
 stderrlog = "0.6.0"
 
 [dependencies.hyper]
-version = "0.14.26"
-features = ["http1", "server", "stream", "tcp"]
+version = "1.6.0"
+features = ["http1", "server"]
+
+[dependencies.hyper-util]
+version = "0.1.11"
+features = ["tokio"]
+
+[dependencies.multipart-stream]
+version = "0.1.2"
+git = "https://github.com/grafbase/multipart-stream-rs-fork.git"
+branch = "http-1.0-fix-multipart-mixed"
 
 [dependencies.tokio]
 version = "1.28.2"
-features = ["macros", "rt-multi-thread", "sync", "time"]
+features = ["macros", "net", "rt-multi-thread", "sync", "time"]
 
 [dependencies.tokio-stream]
 version = "0.1.14"
