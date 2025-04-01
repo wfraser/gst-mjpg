@@ -37,7 +37,9 @@ impl FromStr for Size {
     }
 }
 
+/// Use the GStreamer library to serve MJPG over HTTP from a video camera.
 #[derive(Debug, Parser)]
+#[command(version = format!("{} by {}", clap::crate_version!(), clap::crate_authors!(", ")))]
 struct Args {
     /// WIDTHxHEIGHT. If unspecified, use whatever the camera's native resolution is.
     #[arg(long)]

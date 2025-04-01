@@ -10,7 +10,7 @@ license = "MIT/Apache-2.0"
 [dependencies]
 anyhow = "1.0.71"
 bytes = "1.4.0"
-clap = { version = "4.3.0", features = ["derive"] }
+clap = { version = "4.3.0", features = ["derive", "cargo", "string"] }
 futures = "0.3.28"
 gstreamer = "0.20.5"
 gstreamer-app = "0.20.0"
