@@ -1,6 +1,6 @@
 [package]
 name = "gst-mjpg"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["Bill Fraser <bill@wfraser.dev>"]
 repository = "https://github.com/wfraser/gst-mjpg"
@@ -12,8 +12,8 @@ anyhow = "1.0.71"
 bytes = "1.4.0"
 clap = { version = "4.3.0", features = ["derive", "cargo", "string"] }
 futures = "0.3.28"
-gstreamer = "0.20.5"
-gstreamer-app = "0.20.0"
+gstreamer = "0.23.5"
+gstreamer-app = "0.23.5"
 http-body-util = "0.1.3"
 log = "0.4"
 #multipart-stream = "0.1.2"

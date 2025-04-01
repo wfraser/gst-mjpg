@@ -22,14 +22,14 @@ pub struct Video {
 impl Video {
     pub fn gst_init() -> anyhow::Result<()> {
         gstreamer::init().context("failed to init gstreamer")?;
-        gstreamer::debug_set_active(true);
-        gstreamer::debug_set_colored(true);
-        gstreamer::debug_set_default_threshold(DebugLevel::Warning);
+        gstreamer::log::set_active(true);
+        gstreamer::log::set_colored(true);
+        gstreamer::log::set_default_threshold(DebugLevel::Warning);
         Ok(())
     }
 
     pub fn new(source: VideoSource, size: Option<(u32, u32)>, filter: Option<&str>) -> anyhow::Result<Self> {
-        let pipeline = Pipeline::new(Some("pipeline"));
+        let pipeline = Pipeline::with_name("pipeline");
         let mut elts = vec![];
 
         let camera = match source {
@@ -48,7 +48,7 @@ impl Video {
 
         let filt: Bin;
         if let Some(desc) = filter {
-            filt = gstreamer::parse_bin_from_description(desc, true)
+            filt = gstreamer::parse::bin_from_description(desc, true)
                 .with_context(|| format!("failed to create elements described by {desc:?}"))?;
             elts.push(filt.upcast_ref());
         }
