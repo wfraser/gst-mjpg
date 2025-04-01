@@ -2,7 +2,7 @@
 name = "gst-mjpg"
 version = "0.2.1"
 edition = "2021"
-authors = ["Bill Fraser <wfraser@codewise.org>"]
+authors = ["Bill Fraser <bill@wfraser.dev>"]
 repository = "https://github.com/wfraser/gst-mjpg"
 readme = "README.md"
 license = "MIT/Apache-2.0"
